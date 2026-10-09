@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
-import { Terminal, Lock, ChevronRight, LogOut, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Terminal, Lock, ChevronRight, LogOut, CheckCircle, XCircle, Loader2, Trophy, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
+
+interface TeamProgress {
+  team_name: string;
+  current_level: number;
+  updated_at: string;
+}
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -13,6 +19,36 @@ export default function App() {
   const [answer, setAnswer] = useState('');
   const [feedback, setFeedback] = useState<'idle' | 'success' | 'error'>('idle');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Leaderboard State
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<TeamProgress[]>([]);
+  const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
+
+  const fetchLeaderboard = async () => {
+    setIsLoadingLeaderboard(true);
+    try {
+      const { data, error } = await supabase
+        .from('cipherquest_progress')
+        .select('team_name, current_level, updated_at')
+        .order('current_level', { ascending: false })
+        .order('updated_at', { ascending: true })
+        .limit(50);
+      
+      if (error) throw error;
+      setLeaderboard(data || []);
+    } catch (err) {
+      console.error('Failed to fetch leaderboard:', err);
+    } finally {
+      setIsLoadingLeaderboard(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showLeaderboard) {
+      fetchLeaderboard();
+    }
+  }, [showLeaderboard]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,6 +160,12 @@ export default function App() {
     setAnswer('');
   };
 
+  // Helper to format date
+  const formatTime = (isoString: string) => {
+    const d = new Date(isoString);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -168,24 +210,89 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative">
+      
+      {/* LEADERBOARD MODAL */}
+      {showLeaderboard && (
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-cipher-card border border-neutral-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-black/50">
+              <div className="flex items-center gap-2">
+                <Trophy className="text-cipher-green w-5 h-5" />
+                <h2 className="font-bold tracking-widest text-lg">GLOBAL RANKINGS</h2>
+              </div>
+              <button onClick={() => setShowLeaderboard(false)} className="text-neutral-500 hover:text-white transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-0 overflow-y-auto flex-1">
+              {isLoadingLeaderboard ? (
+                <div className="flex justify-center p-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-cipher-green" />
+                </div>
+              ) : leaderboard.length === 0 ? (
+                <div className="text-center p-12 text-cipher-muted font-mono">
+                  NO TEAMS ON THE BOARD YET.
+                </div>
+              ) : (
+                <table className="w-full text-left font-mono text-sm">
+                  <thead className="bg-black/40 text-cipher-muted sticky top-0">
+                    <tr>
+                      <th className="px-6 py-3 font-normal">RANK</th>
+                      <th className="px-6 py-3 font-normal">TEAM</th>
+                      <th className="px-6 py-3 font-normal text-center">LEVEL</th>
+                      <th className="px-6 py-3 font-normal text-right">LAST SOLVE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard.map((team, idx) => (
+                      <tr key={idx} className="border-b border-neutral-800/50 hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-4">
+                          <span className={`${idx === 0 ? 'text-yellow-400 font-bold' : idx === 1 ? 'text-gray-300 font-bold' : idx === 2 ? 'text-amber-600 font-bold' : 'text-neutral-500'}`}>
+                            #{idx + 1}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-white">{team.team_name}</td>
+                        <td className="px-6 py-4 text-center">
+                          <span className="text-cipher-green">LVL {team.current_level}</span>
+                        </td>
+                        <td className="px-6 py-4 text-right text-neutral-500">
+                          {formatTime(team.updated_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="border-b border-neutral-800 bg-cipher-dark/90 backdrop-blur sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Terminal className="text-cipher-green w-6 h-6" />
-            <span className="font-bold tracking-widest">CIPHERQUEST</span>
+            <span className="font-bold tracking-widest hidden sm:block">CIPHERQUEST</span>
           </div>
           
-          <div className="flex items-center gap-6 font-mono text-sm">
-            <div className="text-cipher-muted hidden sm:block">
+          <div className="flex items-center gap-4 sm:gap-6 font-mono text-sm">
+            <button 
+              onClick={() => setShowLeaderboard(true)}
+              className="text-neutral-300 hover:text-cipher-green transition-colors flex items-center gap-2 bg-neutral-900 px-3 py-1.5 rounded border border-neutral-800"
+            >
+              <Trophy className="w-4 h-4" /> <span className="hidden sm:inline">LEADERBOARD</span>
+            </button>
+            <div className="text-cipher-muted hidden md:block border-l border-neutral-800 pl-6">
               TEAM: <span className="text-white">{teamName}</span>
             </div>
             <button 
               onClick={handleLogout}
-              className="text-neutral-500 hover:text-white transition-colors flex items-center gap-2"
+              className="text-neutral-500 hover:text-white transition-colors flex items-center gap-2 ml-2"
             >
-              <LogOut className="w-4 h-4" /> EXIT
+              <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">EXIT</span>
             </button>
           </div>
         </div>
